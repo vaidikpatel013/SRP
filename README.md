@@ -188,3 +188,5 @@ node seed_firestore.js serviceAccountKey.json
 
 3. **How does the system ensure resilience in low-connectivity areas?**
    * *Answer*: GeoSafe embeds the 80 pre-calculated urban risk clusters in client-side storage (`safety_zones.json`). When network connectivity is intermittent, the Haversine distance calculator continues to evaluate local risk offline.
+
+**531qvS4fRFPC9WsHeuGE [531qvS4fRFPC9WsHeuGE](https://cloud.maptiler.com/account/keys/f1571612-da56-4013-9357-0aaed997db83/settings)**
