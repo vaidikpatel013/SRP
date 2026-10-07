@@ -1,0 +1,22 @@
+{
+  "indexes": [
+    {
+      "collectionGroup": "active_emergencies",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "status", "order": "ASCENDING" },
+        { "fieldPath": "last_updated", "order": "DESCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "safety_zones",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "City", "order": "ASCENDING" },
+        { "fieldPath": "Time_of_Day", "order": "ASCENDING" },
+        { "fieldPath": "avg_risk_score", "order": "DESCENDING" }
+      ]
+    }
+  ],
+  "fieldOverrides": []
+}

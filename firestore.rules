@@ -1,0 +1,26 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    
+    // Safety Zones Collection: Public Read for all clients; Admin Write only
+    match /safety_zones/{zoneId} {
+      allow read: if true;
+      allow write: if request.auth != null && request.auth.token.admin == true;
+    }
+    
+    // Users Collection: Users can read and update their own profile and emergency contact
+    match /users/{userId} {
+      allow read, write: if request.auth != null && request.auth.uid == userId;
+      // Allow guardians to read victim's emergency contact during SOS
+      allow read: if request.auth != null;
+    }
+    
+    // Active Emergencies Collection:
+    // Victims create and update coordinates; Guardians and Responders read live streams
+    match /active_emergencies/{emergencyId} {
+      allow create: if request.auth != null;
+      allow update: if request.auth != null;
+      allow read: if true; // Allows guardians with the tracking URL to track coordinates in real-time
+    }
+  }
+}

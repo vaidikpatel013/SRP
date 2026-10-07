@@ -1,0 +1,29 @@
+# Dependencies
+node_modules/
+.expo/
+dist/
+web-build/
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+venv/
+.env
+
+# Mobile & IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+.DS_Store
+
+# Flutter
+.dart_tool/
+.flutter-plugins
+.flutter-plugins-dependencies
+.packages
+build/
+
+# Firebase credentials
+serviceAccountKey.json
