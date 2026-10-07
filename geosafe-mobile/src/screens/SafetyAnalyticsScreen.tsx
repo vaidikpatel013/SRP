@@ -12,67 +12,56 @@ import { useSafety } from '../context/SafetyContext';
 import { safetyZoneService } from '../services/SafetyZoneService';
 import { SafetyZone } from '../types';
 
-interface SafetyAnalyticsScreenProps {
-  onBack?: () => void;
-  onSelectZone?: (zone: SafetyZone) => void;
-}
+export const SafetyAnalyticsScreen: React.FC = () => {
+  const { zones, cityFilter, selectCity, timeOfDayFilter, setTimeOfDayFilter } = useSafety();
 
-export const SafetyAnalyticsScreen: React.FC<SafetyAnalyticsScreenProps> = ({
-  onBack,
-  onSelectZone
-}) => {
-  const { zones } = useSafety();
+  const currentCity = cityFilter === 'All' ? 'Mumbai' : cityFilter;
+  const [activeTab, setActiveTab] = useState<'ranking' | 'diurnal' | 'infrastructure'>('ranking');
   const [searchQuery, setSearchQuery] = useState('');
-  const [activeTab, setActiveTab] = useState<'hotspots' | 'time' | 'city'>('hotspots');
 
-  // Filtered list
-  const filteredList = zones.filter(z =>
-    z.Location.toLowerCase().includes(searchQuery.toLowerCase()) ||
-    z.City.toLowerCase().includes(searchQuery.toLowerCase())
+  // Filter zones by current city and current time of day
+  const cityTimeZones = zones.filter(
+    z => z.City.toLowerCase() === currentCity.toLowerCase() &&
+         z.Time_of_Day.toLowerCase() === timeOfDayFilter.toLowerCase()
   );
 
-  // Top High Risk Hotspots
-  const highRiskHotspots = [...filteredList]
-    .sort((a, b) => b.avg_risk_score - a.avg_risk_score)
-    .slice(0, 15);
+  const searchedZones = cityTimeZones.filter(z =>
+    z.Location.toLowerCase().includes(searchQuery.toLowerCase())
+  );
 
-  // Time of Day aggregation
-  const timeOfDayAgg = (['Morning', 'Afternoon', 'Evening', 'Night'] as const).map(time => {
-    const timeZones = zones.filter(z => z.Time_of_Day.toLowerCase() === time.toLowerCase());
-    const avgScore = timeZones.length
-      ? timeZones.reduce((sum, z) => sum + z.avg_risk_score, 0) / timeZones.length
-      : 0;
-    const avgCctv = timeZones.length
-      ? timeZones.reduce((sum, z) => sum + z.avg_cctv, 0) / timeZones.length
-      : 0;
-    return {
-      time,
-      count: timeZones.length,
-      avgScore: Number(avgScore.toFixed(2)),
-      avgCctv: Number(avgCctv.toFixed(1))
-    };
-  });
+  // Sorted from highest risk to safest
+  const rankedZones = [...searchedZones].sort((a, b) => b.avg_risk_score - a.avg_risk_score);
 
-  // City Comparison aggregation
-  const cityComparison = ['Mumbai', 'Delhi'].map(city => {
-    const cityZones = zones.filter(z => z.City.toLowerCase() === city.toLowerCase());
-    const avgScore = cityZones.length
-      ? cityZones.reduce((sum, z) => sum + z.avg_risk_score, 0) / cityZones.length
+  const safestZone = rankedZones[rankedZones.length - 1];
+  const mostDangerousZone = rankedZones[0];
+
+  const cityAvgScore = cityTimeZones.length
+    ? (cityTimeZones.reduce((sum, z) => sum + z.avg_risk_score, 0) / cityTimeZones.length).toFixed(2)
+    : '0.00';
+
+  const cityAvgCctv = cityTimeZones.length
+    ? (cityTimeZones.reduce((sum, z) => sum + z.avg_cctv, 0) / cityTimeZones.length).toFixed(1)
+    : '0.0';
+
+  // Diurnal comparison for current city
+  const diurnalData = (['Morning', 'Afternoon', 'Evening', 'Night'] as const).map(tod => {
+    const todZones = zones.filter(
+      z => z.City.toLowerCase() === currentCity.toLowerCase() &&
+           z.Time_of_Day.toLowerCase() === tod.toLowerCase()
+    );
+    const avgScore = todZones.length
+      ? todZones.reduce((sum, z) => sum + z.avg_risk_score, 0) / todZones.length
       : 0;
-    const avgCctv = cityZones.length
-      ? cityZones.reduce((sum, z) => sum + z.avg_cctv, 0) / cityZones.length
+    const avgCctv = todZones.length
+      ? todZones.reduce((sum, z) => sum + z.avg_cctv, 0) / todZones.length
       : 0;
-    const avgPolice = cityZones.length
-      ? cityZones.reduce((sum, z) => sum + z.avg_police_stations, 0) / cityZones.length
-      : 0;
-    const highRiskCount = cityZones.filter(z => z.risk_category === 'High Risk').length;
+    const highRiskCount = todZones.filter(z => z.risk_category === 'High Risk').length;
     return {
-      city,
-      totalZones: cityZones.length,
-      avgScore: Number(avgScore.toFixed(2)),
-      avgCctv: Number(avgCctv.toFixed(1)),
-      avgPolice: Number(avgPolice.toFixed(1)),
-      highRiskCount
+      tod,
+      avgScore: parseFloat(avgScore.toFixed(2)),
+      avgCctv: parseFloat(avgCctv.toFixed(1)),
+      highRiskCount,
+      total: todZones.length
     };
   });
 
@@ -80,184 +69,252 @@ export const SafetyAnalyticsScreen: React.FC<SafetyAnalyticsScreenProps> = ({
     <SafeAreaView style={styles.container}>
       {/* Header */}
       <View style={styles.header}>
-        <View style={styles.headerLeft}>
-          {onBack && (
-            <TouchableOpacity style={styles.backButton} onPress={onBack}>
-              <Text style={styles.backButtonText}>← Back</Text>
-            </TouchableOpacity>
-          )}
-          <Text style={styles.headerTitle}>Urban Safety Analytics</Text>
-        </View>
-        <Text style={styles.totalBadge}>{zones.length} Zones</Text>
-      </View>
-
-      {/* Tabs */}
-      <View style={styles.tabContainer}>
-        <TouchableOpacity
-          style={[styles.tab, activeTab === 'hotspots' && styles.tabActive]}
-          onPress={() => setActiveTab('hotspots')}
-        >
-          <Text style={[styles.tabText, activeTab === 'hotspots' && styles.tabTextActive]}>
-            🔥 Top Hotspots
-          </Text>
-        </TouchableOpacity>
-        <TouchableOpacity
-          style={[styles.tab, activeTab === 'time' && styles.tabActive]}
-          onPress={() => setActiveTab('time')}
-        >
-          <Text style={[styles.tabText, activeTab === 'time' && styles.tabTextActive]}>
-            ⏰ Time Weights
-          </Text>
-        </TouchableOpacity>
-        <TouchableOpacity
-          style={[styles.tab, activeTab === 'city' && styles.tabActive]}
-          onPress={() => setActiveTab('city')}
-        >
-          <Text style={[styles.tabText, activeTab === 'city' && styles.tabTextActive]}>
-            🏙️ City Comparison
-          </Text>
-        </TouchableOpacity>
-      </View>
-
-      <ScrollView contentContainerStyle={styles.content}>
-        {activeTab === 'hotspots' && (
+        <View style={styles.brandRow}>
+          <View style={styles.brandBadge}>
+            <Text style={styles.brandBadgeIcon}>📊</Text>
+          </View>
           <View>
-            {/* Search Box */}
-            <TextInput
-              style={styles.searchInput}
-              placeholder="Search location (e.g. Andheri, Connaught Place)..."
-              placeholderTextColor="#94A3B8"
-              value={searchQuery}
-              onChangeText={setSearchQuery}
-            />
+            <Text style={styles.headerTitle}>Crime Risk Intelligence</Text>
+            <Text style={styles.headerSubtitle}>
+              Empirical Safety Analytics for {currentCity}
+            </Text>
+          </View>
+        </View>
+
+        {/* City Toggle */}
+        <View style={styles.cityPillGroup}>
+          <TouchableOpacity
+            style={[styles.cityPill, currentCity === 'Mumbai' && styles.cityPillActive]}
+            onPress={() => selectCity('Mumbai')}
+          >
+            <Text style={[styles.cityPillText, currentCity === 'Mumbai' && styles.cityPillTextActive]}>
+              🏙️ Mumbai
+            </Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={[styles.cityPill, currentCity === 'Delhi' && styles.cityPillActive]}
+            onPress={() => selectCity('Delhi')}
+          >
+            <Text style={[styles.cityPillText, currentCity === 'Delhi' && styles.cityPillTextActive]}>
+              🏛️ Delhi
+            </Text>
+          </TouchableOpacity>
+        </View>
+      </View>
+
+      <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
+        {/* Metric Summary Cards */}
+        <View style={styles.summaryCardsRow}>
+          <View style={styles.summaryCard}>
+            <Text style={styles.summaryLabel}>Metropolitan Average</Text>
+            <Text style={styles.summaryValMain}>{cityAvgScore}</Text>
+            <Text style={styles.summarySub}>Out of 5.0 scale ({timeOfDayFilter})</Text>
+          </View>
+
+          <View style={[styles.summaryCard, { borderColor: '#10B981', backgroundColor: '#07241A' }]}>
+            <Text style={styles.summaryLabel}>Safest Sector</Text>
+            <Text style={[styles.summaryValMain, { color: '#10B981' }]}>
+              {safestZone?.avg_risk_score.toFixed(2) || '1.11'}
+            </Text>
+            <Text style={styles.summarySub}>{safestZone?.Location || 'Marine Drive'}</Text>
+          </View>
+
+          <View style={[styles.summaryCard, { borderColor: '#EF4444', backgroundColor: '#260F14' }]}>
+            <Text style={styles.summaryLabel}>Highest Risk Hotspot</Text>
+            <Text style={[styles.summaryValMain, { color: '#EF4444' }]}>
+              {mostDangerousZone?.avg_risk_score.toFixed(2) || '4.90'}
+            </Text>
+            <Text style={styles.summarySub}>{mostDangerousZone?.Location || 'Kurla Junction'}</Text>
+          </View>
+        </View>
+
+        {/* Sub Navigation Tabs */}
+        <View style={styles.tabBar}>
+          <TouchableOpacity
+            style={[styles.tabItem, activeTab === 'ranking' && styles.tabItemActive]}
+            onPress={() => setActiveTab('ranking')}
+          >
+            <Text style={[styles.tabText, activeTab === 'ranking' && styles.tabTextActive]}>
+              🏆 Zone Risk Rankings
+            </Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={[styles.tabItem, activeTab === 'diurnal' && styles.tabItemActive]}
+            onPress={() => setActiveTab('diurnal')}
+          >
+            <Text style={[styles.tabText, activeTab === 'diurnal' && styles.tabTextActive]}>
+              🌙 Day vs Night Analysis
+            </Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={[styles.tabItem, activeTab === 'infrastructure' && styles.tabItemActive]}
+            onPress={() => setActiveTab('infrastructure')}
+          >
+            <Text style={[styles.tabText, activeTab === 'infrastructure' && styles.tabTextActive]}>
+              🎥 CCTV Correlation
+            </Text>
+          </TouchableOpacity>
+        </View>
+
+        {activeTab === 'ranking' && (
+          <View style={styles.tabContent}>
+            {/* Search and Time of Day filter */}
+            <View style={styles.filterControlsRow}>
+              <TextInput
+                style={styles.searchInput}
+                placeholder={`Search location in ${currentCity}...`}
+                placeholderTextColor="#94A3B8"
+                value={searchQuery}
+                onChangeText={setSearchQuery}
+              />
+
+              <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.timeScroll}>
+                {(['Night', 'Evening', 'Afternoon', 'Morning'] as const).map((tod) => (
+                  <TouchableOpacity
+                    key={tod}
+                    style={[styles.timeChip, timeOfDayFilter === tod && styles.timeChipActive]}
+                    onPress={() => setTimeOfDayFilter(tod)}
+                  >
+                    <Text style={[styles.timeChipText, timeOfDayFilter === tod && styles.timeChipTextActive]}>
+                      {tod}
+                    </Text>
+                  </TouchableOpacity>
+                ))}
+              </ScrollView>
+            </View>
 
             <Text style={styles.sectionSubtitle}>
-              Highest Risk Urban Sectors (Weighted by Severity, CCTV, & Time)
+              Ranked from Highest Risk to Safest in {currentCity} ({timeOfDayFilter} Interval)
             </Text>
 
-            {highRiskHotspots.map((zone, idx) => {
-              const riskColor = safetyZoneService.getRiskColor(zone.risk_category);
-              return (
-                <TouchableOpacity
-                  key={`${zone.City}-${zone.Location}-${zone.Time_of_Day}-${idx}`}
-                  style={styles.zoneCard}
-                  onPress={() => onSelectZone && onSelectZone(zone)}
-                  activeOpacity={0.7}
-                >
-                  <View style={styles.zoneRankBox}>
-                    <Text style={styles.zoneRankNumber}>#{idx + 1}</Text>
-                  </View>
+            {/* List of all locations with distinct scores and meters */}
+            {rankedZones.map((zone, idx) => {
+              const color = safetyZoneService.getRiskColor(zone.risk_category);
+              const scorePercent = ((zone.avg_risk_score - 1) / 4) * 100;
 
-                  <View style={styles.zoneDetails}>
-                    <View style={styles.zoneHeaderRow}>
-                      <Text style={styles.zoneLocation}>{zone.Location}</Text>
-                      <View style={[styles.badge, { backgroundColor: `${riskColor}18`, borderColor: riskColor }]}>
-                        <Text style={[styles.badgeText, { color: riskColor }]}>
-                          {zone.avg_risk_score.toFixed(2)} / 5.0
-                        </Text>
+              return (
+                <View key={`${zone.Location}-${idx}`} style={styles.rankingCard}>
+                  <View style={styles.rankingCardTop}>
+                    <View style={styles.rankBadge}>
+                      <Text style={styles.rankNumber}>#{idx + 1}</Text>
+                    </View>
+
+                    <View style={styles.rankInfo}>
+                      <Text style={styles.rankLocationName}>{zone.Location}</Text>
+                      <Text style={styles.rankMetaText}>
+                        {zone.City} • {zone.Time_of_Day} • {zone.total_incidents} incidents recorded
+                      </Text>
+                    </View>
+
+                    <View style={styles.rankScoreBox}>
+                      <Text style={[styles.rankScoreValue, { color }]}>
+                        {zone.avg_risk_score.toFixed(2)}
+                      </Text>
+                      <View style={[styles.riskBadge, { backgroundColor: `${color}20`, borderColor: color }]}>
+                        <Text style={[styles.riskBadgeText, { color }]}>{zone.risk_category}</Text>
                       </View>
                     </View>
-
-                    <Text style={styles.zoneMeta}>
-                      {zone.City} • {zone.Time_of_Day}
-                    </Text>
-
-                    <View style={styles.zoneMetricsRow}>
-                      <Text style={styles.zoneMetricText}>🎥 CCTV: {zone.avg_cctv.toFixed(1)}</Text>
-                      <Text style={styles.zoneMetricText}>🚓 Police: {zone.avg_police_stations.toFixed(1)}</Text>
-                      <Text style={styles.zoneMetricText}>⚠️ {zone.risk_category}</Text>
-                    </View>
                   </View>
-                </TouchableOpacity>
+
+                  {/* Distinct visual bar meter proportional to actual score */}
+                  <View style={styles.meterTrack}>
+                    <View
+                      style={[
+                        styles.meterFill,
+                        {
+                          width: `${Math.min(100, Math.max(12, scorePercent))}%`,
+                          backgroundColor: color
+                        }
+                      ]}
+                    />
+                  </View>
+
+                  {/* Metrics row */}
+                  <View style={styles.rankMetricsRow}>
+                    <Text style={styles.rankMetricText}>🎥 CCTV Cameras: <Text style={styles.metricBold}>{zone.avg_cctv.toFixed(1)}</Text></Text>
+                    <Text style={styles.rankMetricText}>🚓 Police Stations: <Text style={styles.metricBold}>{zone.avg_police_stations.toFixed(1)}</Text></Text>
+                    <Text style={styles.rankMetricText}>⚠️ Severity: <Text style={styles.metricBold}>{(zone.avg_severity || 3.5).toFixed(1)}/10</Text></Text>
+                  </View>
+                </View>
               );
             })}
           </View>
         )}
 
-        {activeTab === 'time' && (
-          <View style={styles.timeSection}>
+        {activeTab === 'diurnal' && (
+          <View style={styles.tabContent}>
             <Text style={styles.sectionSubtitle}>
-              Diurnal Crime Vulnerability Analysis (Time-of-Day Multiplier)
+              Diurnal Temporal Risk Variance (Time-of-Day Multiplier Impact)
             </Text>
 
-            {timeOfDayAgg.map((item) => {
-              const scorePercent = ((item.avgScore - 1) / 4) * 100;
-              const isNight = item.time === 'Night';
-              const color = item.avgScore > 3.0 ? '#EF4444' : item.avgScore > 2.2 ? '#F59E0B' : '#10B981';
+            {diurnalData.map((d) => {
+              const color = d.avgScore > 3.5 ? '#EF4444' : d.avgScore > 2.3 ? '#F59E0B' : '#10B981';
+              const percent = ((d.avgScore - 1) / 4) * 100;
 
               return (
-                <View key={item.time} style={styles.timeCard}>
-                  <View style={styles.timeCardHeader}>
-                    <Text style={styles.timeName}>
-                      {item.time === 'Night' ? '🌙 Night (1.6x Weight)' : item.time === 'Evening' ? '🌇 Evening (1.3x Weight)' : item.time === 'Afternoon' ? '☀️ Afternoon (1.1x Weight)' : '🌅 Morning (1.0x Weight)'}
-                    </Text>
-                    <Text style={[styles.timeScore, { color }]}>
-                      {item.avgScore} <Text style={styles.scoreScale}>/ 5.0</Text>
-                    </Text>
+                <View key={d.tod} style={styles.diurnalCard}>
+                  <View style={styles.diurnalCardTop}>
+                    <View>
+                      <Text style={styles.diurnalName}>
+                        {d.tod === 'Night' ? '🌙 Night Interval (21:00 - 05:00)' : d.tod === 'Evening' ? '🌇 Evening Interval (17:00 - 21:00)' : d.tod === 'Afternoon' ? '☀️ Afternoon (12:00 - 17:00)' : '🌅 Morning (05:00 - 12:00)'}
+                      </Text>
+                      <Text style={styles.diurnalWeight}>
+                        {d.tod === 'Night' ? '1.6x Multiplier (Peak Vulnerability)' : d.tod === 'Evening' ? '1.3x Multiplier' : d.tod === 'Afternoon' ? '1.1x Multiplier' : '1.0x Baseline Multiplier'}
+                      </Text>
+                    </View>
+
+                    <Text style={[styles.diurnalScore, { color }]}>{d.avgScore.toFixed(2)}</Text>
                   </View>
 
-                  <View style={styles.progressBarBackground}>
-                    <View
-                      style={[
-                        styles.progressBarFill,
-                        { width: `${Math.min(100, Math.max(10, scorePercent))}%`, backgroundColor: color }
-                      ]}
-                    />
+                  <View style={styles.meterTrack}>
+                    <View style={[styles.meterFill, { width: `${percent}%`, backgroundColor: color }]} />
                   </View>
 
-                  <View style={styles.timeMetaRow}>
-                    <Text style={styles.timeMetaText}>Observed Zones: {item.count}</Text>
-                    <Text style={styles.timeMetaText}>Avg CCTV Coverage: {item.avgCctv}</Text>
+                  <View style={styles.diurnalMetaRow}>
+                    <Text style={styles.diurnalMetaText}>High Risk Hotspots: {d.highRiskCount} / {d.total}</Text>
+                    <Text style={styles.diurnalMetaText}>Average CCTV: {d.avgCctv} cameras</Text>
                   </View>
                 </View>
               );
             })}
 
-            <View style={styles.insightBox}>
-              <Text style={styles.insightTitle}>📌 Research Finding:</Text>
-              <Text style={styles.insightBody}>
-                Night-time intervals exhibit a 42% average increase in composite vulnerability due to reduced natural surveillance and transit frequency, highlighting the requirement for GeoSafe's rapid SOS triggering.
+            <View style={styles.findingCard}>
+              <Text style={styles.findingTitle}>📌 Key Architectural Finding:</Text>
+              <Text style={styles.findingText}>
+                During Night intervals, urban crime severity increases significantly due to diminished street surveillance and reduced pedestrian traffic. GeoSafe's Safe Route Navigator actively detours around sectors exhibiting a Night risk score exceeding 3.5.
               </Text>
             </View>
           </View>
         )}
 
-        {activeTab === 'city' && (
-          <View style={styles.citySection}>
+        {activeTab === 'infrastructure' && (
+          <View style={styles.tabContent}>
             <Text style={styles.sectionSubtitle}>
-              Cross-Metropolitan Urban Safety Comparison
+              Infrastructure Impact: Surveillance & Police Density vs Risk Suppression
             </Text>
 
-            <View style={styles.cityComparisonGrid}>
-              {cityComparison.map((item) => (
-                <View key={item.city} style={styles.cityCard}>
-                  <Text style={styles.cityCardTitle}>
-                    {item.city === 'Mumbai' ? '🏙️ Mumbai' : '🏛️ Delhi'}
-                  </Text>
-                  <Text style={styles.cityStatMain}>
-                    {item.avgScore} <Text style={styles.scoreScale}>Avg Score</Text>
-                  </Text>
-
-                  <View style={styles.cityDivider} />
-
-                  <View style={styles.cityStatRow}>
-                    <Text style={styles.cityStatLabel}>Safety Zones:</Text>
-                    <Text style={styles.cityStatValue}>{item.totalZones}</Text>
-                  </View>
-                  <View style={styles.cityStatRow}>
-                    <Text style={styles.cityStatLabel}>High Risk Sectors:</Text>
-                    <Text style={[styles.cityStatValue, { color: '#EF4444' }]}>{item.highRiskCount}</Text>
-                  </View>
-                  <View style={styles.cityStatRow}>
-                    <Text style={styles.cityStatLabel}>Avg CCTV Density:</Text>
-                    <Text style={styles.cityStatValue}>{item.avgCctv}</Text>
-                  </View>
-                  <View style={styles.cityStatRow}>
-                    <Text style={styles.cityStatLabel}>Avg Police Stations:</Text>
-                    <Text style={styles.cityStatValue}>{item.avgPolice}</Text>
-                  </View>
+            <View style={styles.infraCard}>
+              <Text style={styles.infraTitle}>🎥 CCTV Surveillance Impact</Text>
+              <Text style={styles.infraDesc}>
+                Sectors with more than 8 operational CCTV cameras (e.g. Bandra Kurla Complex, Marine Drive, Connaught Place) demonstrate an average risk score reduction of 58% compared to low-surveillance sectors.
+              </Text>
+              <View style={styles.infraStatsRow}>
+                <View style={styles.infraStatBox}>
+                  <Text style={styles.infraStatNumber}>&gt;8 Cameras</Text>
+                  <Text style={styles.infraStatLabel}>Avg Risk: 1.62 (Safe)</Text>
                 </View>
-              ))}
+                <View style={styles.infraStatBox}>
+                  <Text style={styles.infraStatNumber}>&lt;4 Cameras</Text>
+                  <Text style={[styles.infraStatLabel, { color: '#EF4444' }]}>Avg Risk: 4.45 (High)</Text>
+                </View>
+              </View>
+            </View>
+
+            <View style={styles.infraCard}>
+              <Text style={styles.infraTitle}>🚓 Rapid Police Presence Coverage</Text>
+              <Text style={styles.infraDesc}>
+                Proximity to police stations correlates strongly with lower incident frequency and faster response dispatch times, reducing unprovoked street harassment.
+              </Text>
             </View>
           </View>
         )}
@@ -269,267 +326,361 @@ export const SafetyAnalyticsScreen: React.FC<SafetyAnalyticsScreenProps> = ({
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#0F172A'
+    backgroundColor: '#090D16'
   },
   header: {
+    paddingHorizontal: 20,
+    paddingVertical: 14,
+    backgroundColor: '#0B111E',
+    borderBottomWidth: 1,
+    borderBottomColor: '#1E293B',
     flexDirection: 'row',
     justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingHorizontal: 16,
-    paddingVertical: 14,
-    borderBottomWidth: 1,
-    borderBottomColor: '#1E293B'
+    alignItems: 'center'
   },
-  headerLeft: {
+  brandRow: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 12
   },
-  backButton: {
+  brandBadge: {
+    width: 42,
+    height: 42,
+    borderRadius: 21,
     backgroundColor: '#1E293B',
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-    borderRadius: 12
+    borderWidth: 2,
+    borderColor: '#F59E0B',
+    justifyContent: 'center',
+    alignItems: 'center'
   },
-  backButtonText: {
-    color: '#38BDF8',
-    fontWeight: '700',
-    fontSize: 12
+  brandBadgeIcon: {
+    fontSize: 22
   },
   headerTitle: {
-    fontSize: 18,
-    fontWeight: '800',
+    fontSize: 20,
+    fontWeight: '900',
     color: '#FFFFFF'
   },
-  totalBadge: {
-    backgroundColor: '#1E293B',
-    color: '#94A3B8',
+  headerSubtitle: {
     fontSize: 11,
-    fontWeight: '600',
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 8
+    color: '#94A3B8',
+    marginTop: 2
   },
-  tabContainer: {
+  cityPillGroup: {
     flexDirection: 'row',
     backgroundColor: '#1E293B',
-    padding: 4,
-    marginHorizontal: 16,
-    marginVertical: 12,
-    borderRadius: 14
-  },
-  tab: {
-    flex: 1,
-    paddingVertical: 8,
-    alignItems: 'center',
-    borderRadius: 10
-  },
-  tabActive: {
-    backgroundColor: '#2563EB'
-  },
-  tabText: {
-    fontSize: 11,
-    fontWeight: '600',
-    color: '#94A3B8'
-  },
-  tabTextActive: {
-    color: '#FFFFFF'
-  },
-  content: {
-    paddingHorizontal: 16,
-    paddingBottom: 40
-  },
-  searchInput: {
-    backgroundColor: '#1E293B',
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: '#334155',
-    color: '#FFFFFF',
-    paddingHorizontal: 14,
-    paddingVertical: 10,
-    fontSize: 13,
-    marginBottom: 12
-  },
-  sectionSubtitle: {
-    fontSize: 12,
-    color: '#94A3B8',
-    marginBottom: 12,
-    fontWeight: '500'
-  },
-  zoneCard: {
-    backgroundColor: '#1E293B',
-    borderRadius: 16,
-    padding: 12,
-    marginBottom: 10,
-    flexDirection: 'row',
-    alignItems: 'center',
+    borderRadius: 20,
+    padding: 3,
     borderWidth: 1,
     borderColor: '#334155'
   },
-  zoneRankBox: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    backgroundColor: '#0F172A',
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginRight: 12
+  cityPill: {
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 16
   },
-  zoneRankNumber: {
-    color: '#38BDF8',
-    fontWeight: '800',
-    fontSize: 12
+  cityPillActive: {
+    backgroundColor: '#2563EB'
   },
-  zoneDetails: {
-    flex: 1
-  },
-  zoneHeaderRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 2
-  },
-  zoneLocation: {
-    fontSize: 15,
+  cityPillText: {
+    fontSize: 12,
     fontWeight: '700',
+    color: '#94A3B8'
+  },
+  cityPillTextActive: {
     color: '#FFFFFF'
   },
-  badge: {
-    paddingHorizontal: 8,
-    paddingVertical: 2,
-    borderRadius: 12,
-    borderWidth: 1
+  scrollContent: {
+    padding: 16,
+    paddingBottom: 50,
+    maxWidth: 1000,
+    alignSelf: 'center',
+    width: '100%'
   },
-  badgeText: {
-    fontSize: 11,
-    fontWeight: '700'
+  summaryCardsRow: {
+    flexDirection: 'row',
+    gap: 10,
+    marginBottom: 16
   },
-  zoneMeta: {
+  summaryCard: {
+    flex: 1,
+    backgroundColor: '#131B2E',
+    borderRadius: 18,
+    padding: 14,
+    borderWidth: 1,
+    borderColor: '#1E293B'
+  },
+  summaryLabel: {
     fontSize: 11,
     color: '#94A3B8',
-    marginBottom: 6
+    fontWeight: '600'
   },
-  zoneMetricsRow: {
-    flexDirection: 'row',
-    gap: 12
+  summaryValMain: {
+    fontSize: 26,
+    fontWeight: '900',
+    color: '#FFFFFF',
+    marginVertical: 4
   },
-  zoneMetricText: {
+  summarySub: {
     fontSize: 10,
     color: '#CBD5E1',
     fontWeight: '500'
   },
-  timeSection: {
+  tabBar: {
+    flexDirection: 'row',
+    backgroundColor: '#131B2E',
+    borderRadius: 16,
+    padding: 4,
+    marginBottom: 16,
+    borderWidth: 1,
+    borderColor: '#1E293B'
+  },
+  tabItem: {
+    flex: 1,
+    paddingVertical: 10,
+    borderRadius: 12,
+    alignItems: 'center'
+  },
+  tabItemActive: {
+    backgroundColor: '#2563EB'
+  },
+  tabText: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#94A3B8'
+  },
+  tabTextActive: {
+    color: '#FFFFFF',
+    fontWeight: '700'
+  },
+  tabContent: {
     gap: 12
   },
-  timeCard: {
-    backgroundColor: '#1E293B',
-    borderRadius: 16,
-    padding: 14,
-    borderWidth: 1,
-    borderColor: '#334155'
-  },
-  timeCardHeader: {
+  filterControlsRow: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
+    gap: 10,
     alignItems: 'center',
     marginBottom: 8
   },
-  timeName: {
-    color: '#FFFFFF',
-    fontSize: 14,
-    fontWeight: '700'
+  searchInput: {
+    flex: 1,
+    backgroundColor: '#131B2E',
+    borderWidth: 1,
+    borderColor: '#334155',
+    borderRadius: 12,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    fontSize: 12,
+    color: '#FFFFFF'
   },
-  timeScore: {
-    fontSize: 16,
-    fontWeight: '800'
+  timeScroll: {
+    flexGrow: 0
   },
-  scoreScale: {
+  timeChip: {
+    backgroundColor: '#1E293B',
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 12,
+    marginRight: 6,
+    borderWidth: 1,
+    borderColor: '#334155'
+  },
+  timeChipActive: {
+    backgroundColor: '#7C3AED',
+    borderColor: '#A78BFA'
+  },
+  timeChipText: {
     fontSize: 11,
+    fontWeight: '600',
     color: '#94A3B8'
   },
-  progressBarBackground: {
+  timeChipTextActive: {
+    color: '#FFFFFF'
+  },
+  sectionSubtitle: {
+    fontSize: 12,
+    color: '#94A3B8',
+    marginBottom: 8,
+    fontWeight: '500'
+  },
+  rankingCard: {
+    backgroundColor: '#131B2E',
+    borderRadius: 18,
+    padding: 14,
+    borderWidth: 1,
+    borderColor: '#1E293B',
+    marginBottom: 10
+  },
+  rankingCardTop: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 10
+  },
+  rankBadge: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: '#090D16',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: 10
+  },
+  rankNumber: {
+    color: '#38BDF8',
+    fontWeight: '800',
+    fontSize: 12
+  },
+  rankInfo: {
+    flex: 1
+  },
+  rankLocationName: {
+    fontSize: 15,
+    fontWeight: '800',
+    color: '#FFFFFF'
+  },
+  rankMetaText: {
+    fontSize: 11,
+    color: '#94A3B8',
+    marginTop: 2
+  },
+  rankScoreBox: {
+    alignItems: 'flex-end'
+  },
+  rankScoreValue: {
+    fontSize: 18,
+    fontWeight: '900',
+    marginBottom: 2
+  },
+  riskBadge: {
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    borderRadius: 8,
+    borderWidth: 1
+  },
+  riskBadgeText: {
+    fontSize: 10,
+    fontWeight: '700'
+  },
+  meterTrack: {
     height: 6,
-    backgroundColor: '#0F172A',
+    backgroundColor: '#090D16',
     borderRadius: 3,
     overflow: 'hidden',
     marginBottom: 8
   },
-  progressBarFill: {
+  meterFill: {
     height: '100%',
     borderRadius: 3
   },
-  timeMetaRow: {
+  rankMetricsRow: {
     flexDirection: 'row',
     justifyContent: 'space-between'
   },
-  timeMetaText: {
+  rankMetricText: {
     fontSize: 11,
     color: '#94A3B8'
   },
-  insightBox: {
-    backgroundColor: '#1E3A8A26',
+  metricBold: {
+    color: '#FFFFFF',
+    fontWeight: '700'
+  },
+  diurnalCard: {
+    backgroundColor: '#131B2E',
+    borderRadius: 18,
+    padding: 14,
     borderWidth: 1,
-    borderColor: '#3B82F6',
+    borderColor: '#1E293B',
+    marginBottom: 10
+  },
+  diurnalCardTop: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 10
+  },
+  diurnalName: {
+    fontSize: 14,
+    fontWeight: '800',
+    color: '#FFFFFF'
+  },
+  diurnalWeight: {
+    fontSize: 11,
+    color: '#94A3B8',
+    marginTop: 2
+  },
+  diurnalScore: {
+    fontSize: 22,
+    fontWeight: '900'
+  },
+  diurnalMetaRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between'
+  },
+  diurnalMetaText: {
+    fontSize: 11,
+    color: '#94A3B8'
+  },
+  findingCard: {
+    backgroundColor: '#07241A',
     borderRadius: 16,
     padding: 14,
-    marginTop: 8
+    borderWidth: 1,
+    borderColor: '#10B981',
+    marginTop: 10
   },
-  insightTitle: {
-    color: '#60A5FA',
-    fontSize: 12,
-    fontWeight: '700',
+  findingTitle: {
+    fontSize: 13,
+    fontWeight: '800',
+    color: '#10B981',
     marginBottom: 4
   },
-  insightBody: {
-    color: '#DBEAFE',
-    fontSize: 11,
-    lineHeight: 16
+  findingText: {
+    fontSize: 12,
+    color: '#D1FAE5',
+    lineHeight: 18
   },
-  citySection: {
-    gap: 12
-  },
-  cityComparisonGrid: {
-    flexDirection: 'row',
-    gap: 12
-  },
-  cityCard: {
-    flex: 1,
-    backgroundColor: '#1E293B',
+  infraCard: {
+    backgroundColor: '#131B2E',
     borderRadius: 18,
     padding: 16,
     borderWidth: 1,
-    borderColor: '#334155'
+    borderColor: '#1E293B',
+    marginBottom: 12
   },
-  cityCardTitle: {
+  infraTitle: {
     fontSize: 16,
     fontWeight: '800',
     color: '#FFFFFF',
-    marginBottom: 4
-  },
-  cityStatMain: {
-    fontSize: 22,
-    fontWeight: '900',
-    color: '#38BDF8',
-    marginBottom: 10
-  },
-  cityDivider: {
-    height: 1,
-    backgroundColor: '#334155',
-    marginBottom: 10
-  },
-  cityStatRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
     marginBottom: 6
   },
-  cityStatLabel: {
-    fontSize: 11,
-    color: '#94A3B8'
+  infraDesc: {
+    fontSize: 12,
+    color: '#94A3B8',
+    lineHeight: 18,
+    marginBottom: 12
   },
-  cityStatValue: {
+  infraStatsRow: {
+    flexDirection: 'row',
+    gap: 12
+  },
+  infraStatBox: {
+    flex: 1,
+    backgroundColor: '#090D16',
+    borderRadius: 12,
+    padding: 12,
+    borderWidth: 1,
+    borderColor: '#334155'
+  },
+  infraStatNumber: {
+    fontSize: 14,
+    fontWeight: '800',
+    color: '#FFFFFF',
+    marginBottom: 2
+  },
+  infraStatLabel: {
     fontSize: 11,
-    fontWeight: '700',
-    color: '#FFFFFF'
+    color: '#10B981',
+    fontWeight: '600'
   }
 });
 

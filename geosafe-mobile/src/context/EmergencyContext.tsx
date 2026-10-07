@@ -1,14 +1,12 @@
 import React, { createContext, useContext, useState, useEffect, useRef } from 'react';
-import { Platform } from 'react-native';
 import * as Haptics from 'expo-haptics';
-import { ActiveEmergency, FakeCallSettings, UserLocation } from '../types';
+import { ActiveEmergency, FakeCallSettings } from '../types';
 import { emergencyService } from '../services/EmergencyService';
 import { fakeCallService } from '../services/FakeCallService';
 import { useAuth } from './AuthContext';
 import { useSafety } from './SafetyContext';
 
 interface EmergencyContextType {
-  // SOS State
   isSosArmed: boolean;
   countdownSeconds: number;
   isSosActive: boolean;
@@ -18,8 +16,7 @@ interface EmergencyContextType {
   cancelSosCountdown: () => void;
   triggerSosImmediate: () => Promise<void>;
   resolveEmergency: () => Promise<void>;
-
-  // Fake Call State
+  // Fake Call State (Discreet Escape Utility)
   isFakeCallIncoming: boolean;
   isFakeCallConnected: boolean;
   fakeCallTimerRemaining: number | null;
@@ -37,7 +34,6 @@ export const EmergencyProvider: React.FC<{ children: React.ReactNode }> = ({ chi
   const { user } = useAuth();
   const { userLocation } = useSafety();
 
-  // SOS States
   const [isSosArmed, setIsSosArmed] = useState<boolean>(false);
   const [countdownSeconds, setCountdownSeconds] = useState<number>(5);
   const [isSosActive, setIsSosActive] = useState<boolean>(false);
@@ -56,7 +52,29 @@ export const EmergencyProvider: React.FC<{ children: React.ReactNode }> = ({ chi
 
   const countdownTimerRef = useRef<any>(null);
   const fakeCallScheduleTimerRef = useRef<any>(null);
-  const emergencyStreamTimerRef = useRef<any>(null);
+
+  useEffect(() => {
+    if (!activeEmergencyId) {
+      setActiveEmergencyData(null);
+      return;
+    }
+
+    return emergencyService.subscribeToEmergency(activeEmergencyId, data => {
+      setActiveEmergencyData(data);
+      if (data?.status === 'RESOLVED') {
+        setIsSosActive(false);
+      }
+    });
+  }, [activeEmergencyId]);
+
+  useEffect(() => {
+    if (!isSosActive || !activeEmergencyId) return;
+
+    const interval = setInterval(() => {
+      void emergencyService.updateEmergencyLocation(userLocation.latitude, userLocation.longitude);
+    }, 5000);
+    return () => clearInterval(interval);
+  }, [activeEmergencyId, isSosActive, userLocation.latitude, userLocation.longitude]);
 
   // Subscribe to fake call service triggers
   useEffect(() => {
@@ -69,50 +87,30 @@ export const EmergencyProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     return unsub;
   }, []);
 
-  // Subscribe to live emergency document when active
-  useEffect(() => {
-    if (!activeEmergencyId) {
-      setActiveEmergencyData(null);
-      return;
-    }
-
-    const unsub = emergencyService.subscribeToEmergency(activeEmergencyId, (data) => {
-      setActiveEmergencyData(data);
-      if (data && data.status === 'RESOLVED') {
-        setIsSosActive(false);
-      }
-    });
-
-    return unsub;
-  }, [activeEmergencyId]);
-
-  // Handle SOS countdown logic
   const startSosCountdown = () => {
     if (isSosActive || isSosArmed) return;
 
     setIsSosArmed(true);
     setCountdownSeconds(5);
-
-    // Initial haptic pulse
-    try {
-      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy);
-    } catch (e) {}
+    void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy).catch(error => {
+      console.warn('SOS haptic feedback failed:', error);
+    });
 
     let count = 5;
     countdownTimerRef.current = setInterval(() => {
       count -= 1;
       setCountdownSeconds(count);
-
-      // Vibration feedback per tick
-      try {
-        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
-      } catch (e) {}
+      void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning).catch(error => {
+        console.warn('SOS countdown haptic feedback failed:', error);
+      });
 
       if (count <= 0) {
         clearInterval(countdownTimerRef.current);
         countdownTimerRef.current = null;
         setIsSosArmed(false);
-        triggerSosImmediate();
+        void triggerSosImmediate().catch(error => {
+          console.error('Failed to activate emergency:', error);
+        });
       }
     }, 1000);
   };
@@ -124,9 +122,9 @@ export const EmergencyProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     }
     setIsSosArmed(false);
     setCountdownSeconds(5);
-    try {
-      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-    } catch (e) {}
+    void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(error => {
+      console.warn('SOS cancellation haptic feedback failed:', error);
+    });
   };
 
   const triggerSosImmediate = async () => {
@@ -136,9 +134,8 @@ export const EmergencyProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     }
     setIsSosArmed(false);
 
-    const uid = user?.uid || 'anon_sos_user';
     const emergencyId = await emergencyService.triggerSOS(
-      uid,
+      user?.uid || 'anon_sos_user',
       userLocation.latitude,
       userLocation.longitude,
       {
@@ -147,29 +144,14 @@ export const EmergencyProvider: React.FC<{ children: React.ReactNode }> = ({ chi
         emergency_contact: user?.emergency_contact
       }
     );
-
     setActiveEmergencyId(emergencyId);
     setIsSosActive(true);
-
-    // Continuous GPS streaming every 5 seconds
-    if (emergencyStreamTimerRef.current) {
-      clearInterval(emergencyStreamTimerRef.current);
-    }
-    emergencyStreamTimerRef.current = setInterval(() => {
-      emergencyService.updateEmergencyLocation(userLocation.latitude, userLocation.longitude);
-    }, 5000);
   };
 
   const resolveEmergency = async () => {
-    if (emergencyStreamTimerRef.current) {
-      clearInterval(emergencyStreamTimerRef.current);
-      emergencyStreamTimerRef.current = null;
-    }
-
     if (activeEmergencyId) {
       await emergencyService.resolveEmergency(activeEmergencyId);
     }
-
     setIsSosActive(false);
     setActiveEmergencyId(null);
     setActiveEmergencyData(null);
@@ -211,7 +193,6 @@ export const EmergencyProvider: React.FC<{ children: React.ReactNode }> = ({ chi
   };
 
   const acceptFakeCall = () => {
-    // End ringtone sound, change to active call view
     fakeCallService.endCall();
     setIsFakeCallConnected(true);
   };

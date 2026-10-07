@@ -1,7 +1,7 @@
 import React, { useRef } from 'react';
 import { View, StyleSheet, Text, TouchableOpacity, DimensionValue } from 'react-native';
-import MapView, { Marker, Circle, PROVIDER_GOOGLE } from 'react-native-maps';
-import { SafetyZone, UserLocation, ActiveEmergency } from '../../types';
+import MapView, { Marker, Circle, Polyline, PROVIDER_GOOGLE } from 'react-native-maps';
+import { ActiveEmergency, SafetyZone, UserLocation } from '../../types';
 import { safetyZoneService } from '../../services/SafetyZoneService';
 
 interface SafeZoneMapProps {
@@ -10,6 +10,12 @@ interface SafeZoneMapProps {
   activeEmergency?: ActiveEmergency | null;
   onZoneSelect?: (zone: SafetyZone) => void;
   height?: DimensionValue;
+  safeRouteWaypoints?: [number, number][];
+  directRouteWaypoints?: [number, number][];
+  selectedRouteId?: 'safe' | 'direct';
+  originPoint?: { name: string; lat: number; lng: number };
+  destinationPoint?: { name: string; lat: number; lng: number };
+  mapStyle?: 'streets' | 'dark' | 'outdoor';
 }
 
 export const SafeZoneMap: React.FC<SafeZoneMapProps> = ({
@@ -17,7 +23,12 @@ export const SafeZoneMap: React.FC<SafeZoneMapProps> = ({
   zones,
   activeEmergency,
   onZoneSelect,
-  height = 360
+  height = 450,
+  safeRouteWaypoints,
+  directRouteWaypoints,
+  selectedRouteId = 'safe',
+  originPoint,
+  destinationPoint
 }) => {
   const mapRef = useRef<MapView | null>(null);
 
@@ -26,11 +37,14 @@ export const SafeZoneMap: React.FC<SafeZoneMapProps> = ({
       mapRef.current.animateToRegion({
         latitude: userLocation.latitude,
         longitude: userLocation.longitude,
-        latitudeDelta: 0.05,
-        longitudeDelta: 0.05
+        latitudeDelta: 0.06,
+        longitudeDelta: 0.06
       }, 800);
     }
   };
+
+  const safeCoords = (safeRouteWaypoints || []).map(([lat, lng]) => ({ latitude: lat, longitude: lng }));
+  const directCoords = (directRouteWaypoints || []).map(([lat, lng]) => ({ latitude: lat, longitude: lng }));
 
   return (
     <View style={[styles.container, { height }]}>
@@ -47,18 +61,17 @@ export const SafeZoneMap: React.FC<SafeZoneMapProps> = ({
         showsUserLocation={false}
         showsCompass={true}
       >
-        {/* User Current Live Location Marker */}
+        {/* User Location */}
         <Marker
           coordinate={{
             latitude: userLocation.latitude,
             longitude: userLocation.longitude
           }}
-          title="Your Location"
-          description="Live GPS tracking active"
+          title="Current Position"
           pinColor="#2563EB"
         />
 
-        {/* Safety Zone Circles & Markers */}
+        {/* Zones */}
         {zones.map((zone, idx) => {
           const color = safetyZoneService.getRiskColor(zone.risk_category);
           const fillColor = safetyZoneService.getRiskFillColor(zone.risk_category);
@@ -70,10 +83,10 @@ export const SafeZoneMap: React.FC<SafeZoneMapProps> = ({
                   latitude: zone.center_lat,
                   longitude: zone.center_lng
                 }}
-                radius={1200}
+                radius={1100}
                 strokeColor={color}
                 fillColor={fillColor}
-                strokeWidth={2}
+                strokeWidth={1.5}
               />
               <Marker
                 coordinate={{
@@ -81,7 +94,7 @@ export const SafeZoneMap: React.FC<SafeZoneMapProps> = ({
                   longitude: zone.center_lng
                 }}
                 title={`${zone.Location} (${zone.risk_category})`}
-                description={`Score: ${zone.avg_risk_score.toFixed(1)}/5.0 | CCTV: ${zone.avg_cctv.toFixed(1)} | Police: ${zone.avg_police_stations.toFixed(1)}`}
+                description={`Score: ${zone.avg_risk_score.toFixed(1)}/5.0 | CCTV: ${zone.avg_cctv.toFixed(1)}`}
                 onPress={() => onZoneSelect && onZoneSelect(zone)}
                 pinColor={color}
               />
@@ -89,38 +102,59 @@ export const SafeZoneMap: React.FC<SafeZoneMapProps> = ({
           );
         })}
 
-        {/* Moving SOS Emergency Marker if Active */}
-        {activeEmergency && activeEmergency.status === 'ACTIVE' && (
+        {activeEmergency?.status === 'ACTIVE' && (
           <Marker
             coordinate={{
               latitude: activeEmergency.current_lat,
               longitude: activeEmergency.current_lng
             }}
-            title="⚠️ ACTIVE SOS EMERGENCY"
-            description="Continuous emergency coordinates streaming"
+            title="Active SOS Emergency"
+            description="Live emergency location"
             pinColor="#DC2626"
+          />
+        )}
+
+        {/* Direct Route Polyline */}
+        {directCoords.length > 1 && (
+          <Polyline
+            coordinates={directCoords}
+            strokeColor={selectedRouteId === 'direct' ? '#EF4444' : '#F87171'}
+            strokeWidth={selectedRouteId === 'direct' ? 5 : 3}
+            lineDashPattern={[6, 6]}
+          />
+        )}
+
+        {/* Safe AI Shield Route Polyline */}
+        {safeCoords.length > 1 && (
+          <Polyline
+            coordinates={safeCoords}
+            strokeColor={selectedRouteId === 'safe' ? '#10B981' : '#34D399'}
+            strokeWidth={selectedRouteId === 'safe' ? 6 : 4}
+          />
+        )}
+
+        {/* Origin Marker */}
+        {originPoint && (
+          <Marker
+            coordinate={{ latitude: originPoint.lat, longitude: originPoint.lng }}
+            title={`Start: ${originPoint.name}`}
+            pinColor="#10B981"
+          />
+        )}
+
+        {/* Destination Marker */}
+        {destinationPoint && (
+          <Marker
+            coordinate={{ latitude: destinationPoint.lat, longitude: destinationPoint.lng }}
+            title={`Destination: ${destinationPoint.name}`}
+            pinColor="#6366F1"
           />
         )}
       </MapView>
 
       <TouchableOpacity style={styles.recenterButton} onPress={recenter} activeOpacity={0.8}>
-        <Text style={styles.recenterText}>🎯 My Location</Text>
+        <Text style={styles.recenterText}>🎯 My GPS</Text>
       </TouchableOpacity>
-
-      <View style={styles.legendContainer}>
-        <View style={styles.legendItem}>
-          <View style={[styles.legendDot, { backgroundColor: '#10B981' }]} />
-          <Text style={styles.legendLabel}>Low</Text>
-        </View>
-        <View style={styles.legendItem}>
-          <View style={[styles.legendDot, { backgroundColor: '#F59E0B' }]} />
-          <Text style={styles.legendLabel}>Moderate</Text>
-        </View>
-        <View style={styles.legendItem}>
-          <View style={[styles.legendDot, { backgroundColor: '#EF4444' }]} />
-          <Text style={styles.legendLabel}>High</Text>
-        </View>
-      </View>
     </View>
   );
 };
@@ -128,7 +162,7 @@ export const SafeZoneMap: React.FC<SafeZoneMapProps> = ({
 const styles = StyleSheet.create({
   container: {
     width: '100%',
-    borderRadius: 16,
+    borderRadius: 18,
     overflow: 'hidden',
     position: 'relative'
   },
@@ -145,52 +179,19 @@ const styles = StyleSheet.create({
     right: 14,
     backgroundColor: '#FFFFFF',
     paddingHorizontal: 12,
-    paddingVertical: 8,
+    paddingVertical: 6,
     borderRadius: 20,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.2,
+    shadowOpacity: 0.25,
     shadowRadius: 4,
     elevation: 4,
     zIndex: 1000
   },
   recenterText: {
-    fontSize: 12,
-    fontWeight: '600',
-    color: '#1F2937'
-  },
-  legendContainer: {
-    position: 'absolute',
-    bottom: 12,
-    left: 12,
-    backgroundColor: 'rgba(255, 255, 255, 0.92)',
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-    borderRadius: 12,
-    flexDirection: 'row',
-    gap: 12,
-    alignItems: 'center',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.15,
-    shadowRadius: 4,
-    elevation: 3,
-    zIndex: 1000
-  },
-  legendItem: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4
-  },
-  legendDot: {
-    width: 8,
-    height: 8,
-    borderRadius: 4
-  },
-  legendLabel: {
     fontSize: 11,
-    fontWeight: '600',
-    color: '#374151'
+    fontWeight: '700',
+    color: '#0F172A'
   }
 });
 
